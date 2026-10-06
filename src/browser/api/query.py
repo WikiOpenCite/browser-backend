@@ -41,8 +41,9 @@ OPEN_ACCESS_STATUSES = (
 )
 CLOSED_STATUS = "OA_CATEGORY_CLOSED"
 
+
 # Work is LEFT JOINed because Citation.Work is nullable (unresolved citations).
-SELECT_CITATIONS = """\
+SELECT_COLUMNS = """\
 SELECT
     c.CitationId,
     c.Page            AS PageId,
@@ -64,12 +65,16 @@ SELECT
     w.ISBN,
     w.PMID,
     w.PMCID,
-    w.ISSN
+    w.ISSN"""
+
+FROM_CLAUSE = """\
 FROM Citation c
 JOIN Page p           ON p.PageId = c.Page
 JOIN Revision ra      ON ra.RevisionId = c.RevisionAdded
 LEFT JOIN Revision rr ON rr.RevisionId = c.RevisionRemoved
 LEFT JOIN Work w      ON w.OpenAlexId = c.Work"""
+
+SELECT_CITATIONS = SELECT_COLUMNS + "\n" + FROM_CLAUSE
 
 
 # filter field -> (SQL column, comparison operator)
@@ -154,6 +159,28 @@ def build_citation_query(tree, limit: int, offset: int = 0) -> tuple[str, list]:
         "LIMIT ? OFFSET ?"
     )
     return sql, params + [limit, offset]
+
+
+def build_count_query(tree) -> tuple[str, list]:
+    """Total number of citations matching `tree`, ignoring paging."""
+    where, params = build_where(tree)
+    return f"SELECT COUNT(*) AS Total\n{FROM_CLAUSE}\nWHERE {where}", params
+
+
+def build_export_query(tree, batch_size: int, after_id: int = 0) -> tuple[str, list]:
+    """One batch of an unpaged export, using keyset pagination.
+
+    Repeatedly call with after_id = the last CitationId of the previous batch.
+    Unlike OFFSET this stays fast however deep into the result set it goes.
+    """
+    where, params = build_where(tree)
+    sql = (
+        f"{SELECT_CITATIONS}\n"
+        f"WHERE ({where}) AND c.CitationId > %s\n"
+        "ORDER BY c.CitationId\n"
+        "LIMIT %s"
+    )
+    return sql, params + [after_id, batch_size]
 
 
 def build_urls_query(citation_ids: list[int]) -> tuple[str, list] | None:
