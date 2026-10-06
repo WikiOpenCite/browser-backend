@@ -1,0 +1,4 @@
+version = 1
+SPDX-PackageName = "template"
+SPDX-PackageSupplier = "The University of St Andrews"
+annotations = []

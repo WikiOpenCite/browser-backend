@@ -1,0 +1,13 @@
+{
+  "paths": [
+    "**/*.cc",
+    "**/*.h"
+  ],
+  "filterPre": [
+    "build/*"
+  ],
+  "filterPost": [
+    "build/*"
+  ],
+  "buildRoot": "build/dev"
+}

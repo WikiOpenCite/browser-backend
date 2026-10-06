@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2025 The University of St Andrews
+# SPDX-License-Identifier: CC0-1.0
+
+name: Feature Request
+description: File a feature request.
+title: "[Request]: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a new feature!
+  - type: textarea
+    id: description
+    attributes:
+      label: What would you like to see?
+      description: |
+        Also tell us, does this relate to an issue you have? Ex. I am
+        always frustrated when...
+      placeholder: I really really really want...
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

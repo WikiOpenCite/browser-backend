@@ -1,0 +1,15 @@
+{
+  "paths": [
+    "../../src/**/*.cc",
+    "../../src/**/*.h"
+  ],
+  "filterPre": [
+    "../../build/*"
+  ],
+  "filterPost": [
+    "../../build/*"
+  ],
+  "buildRoot": "../../build",
+  "tidyFile": "../../.clang-tidy",
+  "tidyRoot": "../../"
+}

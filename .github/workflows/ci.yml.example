@@ -1,0 +1,153 @@
+# SPDX-FileCopyrightText: 2025 https://github.com/friendlyanon
+# SPDX-License-Identifier: Unlicense
+
+# name: Continuous Integration
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+#   pull_request:
+#     branches:
+#       - main
+
+# env:
+#   VCPKG_COMMIT: "f3e10653cc27d62a37a3763cd84b38bca07c6075"
+
+# jobs:
+#   lint:
+#     runs-on: ubuntu-24.04
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - uses: actions/setup-python@v5
+#         with: { python-version: "3.12" }
+
+#       - name: Install codespell
+#         run: pip3 install codespell
+
+#       - name: Install run-clang-tidy
+#         uses: plinioh/setup-binary-action@v1.0.0
+#         with:
+#           binaryName: run-clang-tidy
+#           binaryUrl: https://github.com/lmapii/run-clang-tidy/releases/download/v0.3.1/run-clang-tidy-v0.3.1-x86_64-unknown-linux-gnu.tar.gz
+#           binaryPathInArchive: run-clang-tidy-v0.3.1-x86_64-unknown-linux-gnu/run-clang-tidy
+
+#       - name: Install static analyzers
+#         run: sudo apt-get install cppcheck -y -q
+
+#       - name: Install vcpkg
+#         uses: friendlyanon/setup-vcpkg@v1
+#         with: { committish: "${{ env.VCPKG_COMMIT }}" }
+
+#       - name: Install required gperf dependencies
+#         run: sudo apt install autoconf autoconf-archive automake libtool
+
+#       - name: Lint
+#         run: cmake -D FORMAT_COMMAND=clang-format-18 -P cmake/lint.cmake
+
+#       - name: Configure
+#         shell: pwsh
+#         run: cmake --preset=ci-ubuntu
+
+#       - name: Build
+#         run: cmake --build build -j 2
+
+#       - name: Tidy
+#         run: run-clang-tidy .github/workflows/tidy.json --suppress-warnings
+
+#       # - name: Spell check
+#       #   if: always()
+#       #   run: cmake -P cmake/spell.cmake
+
+#   docs:
+#     # Deploy docs only when builds succeed
+#     needs: [lint]
+
+#     runs-on: ubuntu-24.04
+
+#     # To enable, first you have to create an orphaned gh-pages branch:
+#     #
+#     #    git switch --orphan gh-pages
+#     #    git commit --allow-empty -m "Initial commit"
+#     #    git push -u origin gh-pages
+#     #
+#     # Edit the <name> placeholder below to your GitHub name, so this action
+#     # runs only in your repository and no one else's fork. After these, delete
+#     # this comment and the last line in the conditional below.
+#     # If you do not wish to use GitHub Pages for deploying documentation, then
+#     # simply delete this job similarly to the coverage one.
+#     if: github.ref == 'refs/heads/main'
+#       && github.event_name == 'push'
+#       && github.repository_owner == 'WikiOpenCite'
+
+#     permissions:
+#       contents: write
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - uses: actions/setup-python@v5
+#         with: { python-version: "3.12" }
+
+#       - name: Install m.css dependencies
+#         run: pip3 install jinja2 Pygments
+
+#       - name: Install Doxygen
+#         run: sudo apt-get update -q
+#           && sudo apt-get install doxygen -q -y
+
+#       - name: Build docs
+#         run: cmake "-DPROJECT_SOURCE_DIR=$PWD" "-DPROJECT_BINARY_DIR=$PWD/build"
+#           -P cmake/docs-ci.cmake
+
+#       - name: Deploy docs
+#         uses: peaceiris/actions-gh-pages@v4
+#         with:
+#           github_token: ${{ secrets.GITHUB_TOKEN }}
+#           publish_dir: build/docs/html
+#   build:
+#     needs: [lint]
+
+#     strategy:
+#       matrix:
+#         os: [ubuntu-24.04]
+
+#     runs-on: ${{ matrix.os }}
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Install static analyzers
+#         if: matrix.os == 'ubuntu-24.04'
+#         run: >-
+#           sudo apt-get install clang-tidy-18 cppcheck -y -q
+
+#           sudo update-alternatives --install
+#           /usr/bin/clang-tidy clang-tidy
+#           /usr/bin/clang-tidy-18 180
+
+#       - name: Install vcpkg
+#         uses: friendlyanon/setup-vcpkg@v1
+#         with: { committish: "${{ env.VCPKG_COMMIT }}" }
+
+#       - name: Install required gperf dependencies
+#         run: sudo apt install autoconf autoconf-archive automake libtool
+
+#       - name: Setup MultiToolTask
+#         if: matrix.os == 'windows-2022'
+#         run: |
+#           Add-Content "$env:GITHUB_ENV" 'UseMultiToolTask=true'
+#           Add-Content "$env:GITHUB_ENV" 'EnforceProcessCountAcrossBuilds=true'
+
+#       - name: Configure
+#         shell: pwsh
+#         run: cmake "--preset=ci-$("${{ matrix.os }}".split("-")[0])"
+
+#       - name: Build
+#         run: cmake --build build --config Release -j 2
+
+#       - name: Install
+#         run: cmake --install build --config Release --prefix prefix
