@@ -3,7 +3,12 @@ Flask endpoint that accepts a filter string of AND / OR combined arguments.
 
     GET /api/works?filter=doi:10.1038/nature12373 AND (openaccess:true OR orcid:0000-0002-1825-0097)
 
-Valid fields: doi, orcid, openalex, openaccess, wiki
+Valid fields: doi, orcid, openalex, openaccess, wiki,
+              added_after, added_before, removed_after, removed_before
+
+Date fields take YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS] (UTC) and form a half-open
+range: *_after is inclusive (>=), *_before is exclusive (<). For example
+    added_after:2026-01-01 AND added_before:2026-02-01      (all of January)
 
 Grammar (AND binds tighter than OR; parentheses override):
     expr   := and_ ( "OR" and_ )*
@@ -19,6 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable, Union
 
 MAX_FILTER_LENGTH = 2000
@@ -85,6 +91,23 @@ def validate_openaccess(value: str) -> bool:
     raise ValueError("invalid openaccess value; expected true or false")
 
 
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?$")
+_DATE_FORMATS = {10: "%Y-%m-%d", 16: "%Y-%m-%dT%H:%M", 19: "%Y-%m-%dT%H:%M:%S"}
+
+
+def validate_date(value: str) -> str:
+    """A UTC date or datetime; returned as ISO 8601 (YYYY-MM-DDTHH:MM:SS)."""
+    v = value.strip()
+    if not DATE_RE.match(v):
+        raise ValueError(
+            "invalid date; expected YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS] (UTC)"
+        )
+    try:
+        return datetime.strptime(v, _DATE_FORMATS[len(v)]).isoformat()
+    except ValueError:
+        raise ValueError("invalid date; that day or time does not exist")
+
+
 def validate_wiki(value: str) -> str:
     """Currently not validated"""
     return value.strip()
@@ -96,6 +119,10 @@ VALIDATORS: dict[str, Callable[[str], Union[str, bool]]] = {
     "openalex": validate_openalex,
     "openaccess": validate_openaccess,
     "wiki": validate_wiki,
+    "added_after": validate_date,
+    "added_before": validate_date,
+    "removed_after": validate_date,
+    "removed_before": validate_date,
 }
 
 

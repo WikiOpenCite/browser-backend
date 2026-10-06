@@ -9,6 +9,7 @@ from browser.api.filter import (
     Term,
     parse_filter,
     tokenise,
+    validate_date,
     validate_doi,
     validate_openaccess,
     validate_openalex,
@@ -123,6 +124,55 @@ class TestValidateOpenaccess:
     def test_invalid(self, raw):
         with pytest.raises(ValueError):
             validate_openaccess(raw)
+
+
+class TestValidateDate:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("2026-01-31", "2026-01-31T00:00:00"),
+            ("2026-01-31T09:30", "2026-01-31T09:30:00"),
+            ("2026-01-31T09:30:15", "2026-01-31T09:30:15"),
+            ("  2024-02-29  ", "2024-02-29T00:00:00"),  # leap day
+        ],
+    )
+    def test_valid(self, raw, expected):
+        assert validate_date(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "",
+            "2026",
+            "2026-1-5",
+            "01-02-2026",
+            "2026/01/31",
+            "yesterday",
+            "2026-01-31 09:30",
+            "2026-01-31T09",
+            "2026-01-31T09:30:15Z",
+            "2026-01-31T09:30:15+01:00",
+            "2026-01-31T09:30:15.123",
+        ],
+    )
+    def test_bad_format(self, raw):
+        with pytest.raises(ValueError, match="expected"):
+            validate_date(raw)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "2026-02-30",
+            "2025-02-29",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-01-31T25:00",
+            "2026-01-31T09:61",
+        ],
+    )
+    def test_impossible_dates(self, raw):
+        with pytest.raises(ValueError, match="does not exist"):
+            validate_date(raw)
 
 
 # class TestValidateWiki:
@@ -306,6 +356,26 @@ class TestParser:
             "openaccess",
             "wiki",
         ]
+
+    def test_date_terms_parse_and_normalise(self):
+        tree, errors = parse_filter(
+            "added_after:2026-01-01 AND removed_before:2026-06-01T12:00"
+        )
+        assert errors == []
+        assert tree == BoolOp(
+            "and",
+            [
+                Term("added_after", "2026-01-01T00:00:00"),
+                Term("removed_before", "2026-06-01T12:00:00"),
+            ],
+        )
+
+    def test_bad_date_collected(self):
+        _, errors = parse_filter("added_after:2026-02-30")
+        assert (
+            errors[0]["field"] == "added_after"
+            and "does not exist" in errors[0]["message"]
+        )
 
     # --- validation errors are collected, not raised -----------------------
     def test_unknown_field_collected(self):

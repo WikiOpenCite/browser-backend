@@ -30,6 +30,25 @@ class TestBuildWhere:
     def test_wiki(self):
         assert where("wiki:enwiki") == ("p.Wiki = ?", ["enwiki"])
 
+    @pytest.mark.parametrize(
+        "field, column, op",
+        [
+            ("added_after", "ra.Timestamp", ">="),
+            ("added_before", "ra.Timestamp", "<"),
+            ("removed_after", "rr.Timestamp", ">="),
+            ("removed_before", "rr.Timestamp", "<"),
+        ],
+    )
+    def test_date_fields(self, field, column, op):
+        sql, params = where(f"{field}:2026-01-31T09:30")
+        assert sql == f"{column} {op} ?"
+        assert params == ["2026-01-31 09:30:00"]  # space, not 'T', for DATETIME
+
+    def test_date_range_is_half_open(self):
+        sql, params = where("added_after:2026-01-01 AND added_before:2026-02-01")
+        assert sql == "(ra.Timestamp >= ? AND ra.Timestamp < ?)"
+        assert params == ["2026-01-01 00:00:00", "2026-02-01 00:00:00"]
+
     def test_orcid_hyphens_stripped(self):
         sql, params = where("orcid:0000-0002-1825-0097")
         assert "a.ORCID = ?" in sql and sql.startswith("EXISTS")
@@ -136,15 +155,15 @@ INSERT INTO Work (OpenAlexId, Title, DOI, OAStatus) VALUES
   (4, 'Unknown OA',   '10.1001/d', 'OA_CATEGORY_UNSPECIFIED');
 INSERT INTO WorkAuthors VALUES (100, 1), (200, 1), (200, 2);
 INSERT INTO WorkInstitutions VALUES (900, 3);
-INSERT INTO Revision VALUES (1, NULL, 'alice', '2026-01-01'), (2, 1, 'bob', '2026-02-01');
-INSERT INTO Page VALUES (10, 'Page EN', 'enwiki'), (20, 'Seite DE', 'dewiki');
+INSERT INTO Revision VALUES (1, NULL, 'alice', '2026-01-01 00:00:00'), (2, 1, 'bob', '2026-02-01 00:00:00'),
+  (3, 2, 'carol', '2026-03-15 12:00:00');INSERT INTO Page VALUES (10, 'Page EN', 'enwiki'), (20, 'Seite DE', 'dewiki');
 INSERT INTO Citation VALUES
   (1, 10, 1, NULL, 1),
   (2, 10, 1, 2,    2),
-  (3, 20, 1, NULL, 3),
-  (4, 20, 1, NULL, 1),
+  (3, 20, 1, 3,    3),
+  (4, 20, 2, NULL, 1),
   (5, 10, 1, NULL, NULL),
-  (6, 10, 1, NULL, 4);
+  (6, 10, 3, NULL, 4);
 """
 
 
@@ -220,7 +239,7 @@ class TestAgainstSampleData:
         assert row["Title"] == "Closed paper"
         assert row["PageTitle"] == "Page EN" and row["Wiki"] == "enwiki"
         assert row["AddedBy"] == "alice" and row["RemovedBy"] == "bob"
-        assert row["RemovedAt"] == "2026-02-01"
+        assert row["RemovedAt"] == "2026-02-01 00:00:00"
 
     def test_not_removed_has_null_removal(self, db):
         row = run(db, "doi:10.1001/a")[0]
@@ -233,6 +252,42 @@ class TestAgainstSampleData:
         assert ids(db, "wiki:enwiki", limit=2) == [1, 2]
         assert ids(db, "wiki:enwiki", limit=2, offset=2) == [5, 6]
         assert ids(db, "wiki:enwiki", limit=2, offset=4) == []
+
+    # --- date ranges: added 1:01-01, 2:01-01, 3:01-01, 4:02-01, 5:01-01, 6:03-15 12:00
+    #                  removed 2:02-01, 3:03-15 12:00
+    def test_added_after_is_inclusive(self, db):
+        assert ids(db, "added_after:2026-02-01") == [4, 6]
+
+    def test_added_before_is_exclusive(self, db):
+        assert ids(db, "added_before:2026-02-01") == [1, 2, 3, 5]
+
+    def test_added_range(self, db):
+        assert ids(db, "added_after:2026-01-15 AND added_before:2026-03-01") == [4]
+
+    def test_removed_after(self, db):
+        assert ids(db, "removed_after:2026-02-01") == [2, 3]
+        assert ids(db, "removed_after:2026-02-02") == [3]
+
+    def test_removed_before_excludes_never_removed(self, db):
+        assert ids(db, "removed_before:2026-03-01") == [2]
+
+    def test_removed_range(self, db):
+        assert ids(db, "removed_after:2026-01-01 AND removed_before:2026-12-31") == [
+            2,
+            3,
+        ]
+
+    def test_datetime_precision(self, db):
+        assert ids(db, "added_after:2026-03-15T12:00") == [6]
+        assert ids(db, "added_after:2026-03-15T12:01") == []
+        assert ids(db, "added_before:2026-03-15T12:00 AND added_after:2026-03-01") == []
+
+    def test_added_or_removed_in_window(self, db):
+        assert ids(db, "added_after:2026-03-01 OR removed_before:2026-03-01") == [2, 6]
+
+    def test_dates_combine_with_other_filters(self, db):
+        assert ids(db, "wiki:dewiki AND removed_after:2026-01-01") == [3]
+        assert ids(db, "openaccess:true AND added_after:2026-02-01") == [4]
 
     def test_urls_query_runs(self, db):
         db.execute(

@@ -7,7 +7,7 @@ dependency on the parser:
     BoolOp -> has .op ("and" | "or") and .children
     Term   -> has .field and .value
 
-All values are passed as bind parameters (%s placeholders, DB-API "format"
+All values are passed as bind parameters (? placeholders, DB-API "format"
 style as used by PyMySQL / mysql-connector); nothing from the user is ever
 interpolated into the SQL text.
 
@@ -19,6 +19,11 @@ Field mapping
     openaccess  true  -> Work.OAStatus is diamond/gold/green/hybrid/bronze
                 false -> Work.OAStatus is closed   (unspecified matches neither)
     wiki        Page.Wiki (wiki database name, e.g. enwiki)
++    added_*     Revision.Timestamp of Citation.RevisionAdded
++    removed_*   Revision.Timestamp of Citation.RevisionRemoved
++                *_after is inclusive (>=) and *_before exclusive (<), so
++                after+before is a half-open range [after, before). Citations
++                that were never removed never match a removed_* condition.
 
 Author / institution conditions use EXISTS sub-queries rather than joins, so
 combining them (orcid:A AND orcid:B) means "has both authors" and never
@@ -67,6 +72,15 @@ LEFT JOIN Revision rr ON rr.RevisionId = c.RevisionRemoved
 LEFT JOIN Work w      ON w.OpenAlexId = c.Work"""
 
 
+# filter field -> (SQL column, comparison operator)
+DATE_FIELDS = {
+    "added_after": ("ra.Timestamp", ">="),
+    "added_before": ("ra.Timestamp", "<"),
+    "removed_after": ("rr.Timestamp", ">="),
+    "removed_before": ("rr.Timestamp", "<"),
+}
+
+
 class UnsupportedFilter(ValueError):
     """The tree contains something this schema cannot express."""
 
@@ -109,6 +123,11 @@ def _term_sql(field: str, value) -> tuple[str, list]:
 
     if field == "wiki":
         return "p.Wiki = ?", [value]
+
+    if field in DATE_FIELDS:
+        column, op = DATE_FIELDS[field]
+        # validator yields ISO 8601 (...T...); MySQL DATETIME literals use a space
+        return f"{column} {op} ?", [value.replace("T", " ")]
 
     raise UnsupportedFilter(f"unknown field {field!r}")
 
